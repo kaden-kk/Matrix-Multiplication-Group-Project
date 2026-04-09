@@ -1,1 +1,1 @@
-# PPC-Group-Project-Matrix-Multiplication
+# Matrix-Multiplication-Group-Project
