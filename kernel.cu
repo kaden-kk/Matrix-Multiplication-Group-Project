@@ -6,6 +6,7 @@
 #include <math.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <mpi.h>
 
 typedef unsigned long long ticks;
 #define TILE_WIDTH 32 // Must be <= 32 since it squared is the number of threads for multiplication
@@ -242,125 +243,186 @@ __global__ void multiplyMatricesParallel(unsigned int leftRows, unsigned int sha
 void parallelMultiplication(unsigned int leftRows, unsigned int shared, unsigned int rightCols, long** left, 
 	long** right, long** result, int device, bool useSharedMem)
 {
-	prefetchMatrix(leftRows, shared, left, device);
-	prefetchMatrix(shared, rightCols, right, device);
-	prefetchMatrix(leftRows, rightCols, result, device);
+    prefetchMatrix(leftRows, shared, left, device);
+    prefetchMatrix(shared, rightCols, right, device);
+    prefetchMatrix(leftRows, rightCols, result, device);
 
-	unsigned int numThreads = TILE_WIDTH * TILE_WIDTH; // One thread per element in the output tile
-	// Pass in the arguments based on output dimensions
-	multiplyMatricesParallel<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(leftRows, shared, rightCols, left, right, result, useSharedMem);
+    cudaDeviceSynchronize();
 
-	cudaDeviceSynchronize();
+    ticks start = getticks();
+
+    multiplyMatricesParallel<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(
+        leftRows, shared, rightCols, left, right, result, useSharedMem);
+
+    cudaDeviceSynchronize();
+
+    ticks finish = getticks();
+
+    printf("GPU kernel time: %lf\n",
+        (double)(finish - start) / 512000000.0);
 }
 
 int main(int argc, char** argv)
 {
-	srand(time(NULL)); // Set random seed for this execution
-	if(argc < 5)
-	{
-		fprintf(stderr, "ERROR: Format is [executable] [left matrix num rows] [shared dimension] [right matrix num cols] [non-zero num for shared memory] [anything for printing]\n");
-		return 1;
-	}
+    MPI_Init(&argc, &argv);
 
-	unsigned int leftRows = atoi(argv[1]);
-	if(leftRows <= 0)
-	{
-		fprintf(stderr, "ERROR: left rows must be >= 1\n");
-		return 1;
-	}
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-	unsigned int shared = atoi(argv[2]);
-	if(shared <= 0)
-	{
-		fprintf(stderr, "ERROR: shared dimension must be >= 1\n");
-		return 1;
-	}
+    srand(time(NULL));
 
-	unsigned int rightCols = atoi(argv[3]);
-	if(rightCols <= 0)
-	{
-		fprintf(stderr, "ERROR: right cols must be >= 1\n");
-		return 1;
-	}
+    if(argc < 5)
+    {
+        if(rank == 0)
+        {
+            fprintf(stderr, "ERROR: Format is [executable] [left matrix num rows] [shared dimension] [right matrix num cols] [non-zero num for shared memory] [anything for printing]\n");
+        }
+        MPI_Finalize();
+        return 1;
+    }
 
-	int memInput = atoi(argv[4]);
-	bool useSharedMem = false;
-	if(memInput != 0)
-	{
-		useSharedMem = true;
-		if(SHARED_PER_ROW == 0)
-		{
-			fprintf(stderr, "Current tile size is incompatible due to too many elements loaded at once. Reduce it.\n");
-			return 1;
-		}
-	}
+    unsigned int leftRows = atoi(argv[1]);
+    unsigned int shared = atoi(argv[2]);
+    unsigned int rightCols = atoi(argv[3]);
 
-	int device = 0; // Won't worry about multiple GPUs yet (likely will be handled with MPI like HW4)
+    int memInput = atoi(argv[4]);
+    bool useSharedMem = false;
 
-	long** left;
-	allocateMatrix(leftRows, shared, &left, false, device);
-	
-	long** right;
-	allocateMatrix(shared, rightCols, &right, false, device);
+    if(memInput != 0)
+    {
+        useSharedMem = true;
+        if(SHARED_PER_ROW == 0)
+        {
+            if(rank == 0)
+                fprintf(stderr, "Current tile size is incompatible due to too many elements loaded at once. Reduce it.\n");
+            MPI_Finalize();
+            return 1;
+        }
+    }
 
-	// long** serialResult;
-	// allocateMatrix(leftRows, rightCols, &serialResult, true, device);
+    int device = 0;
 
-	long** parallelResult;
-	allocateMatrix(leftRows, rightCols, &parallelResult, true, device);
+    unsigned int rowsPerRank = leftRows / size;
+    unsigned int localRows = rowsPerRank;
 
-	generateMatrix(leftRows, shared, left);
-	generateMatrix(shared, rightCols, right);
+    if(rank == size - 1)
+    {
+        localRows = leftRows - rowsPerRank * (size - 1);
+    }
 
-	// ticks serialStart = getticks();
-	// multiplyMatricesSerial(leftRows, shared, rightCols, left, right, serialResult);
-	// ticks serialFinish = getticks();
+    long** leftLocal;
+    allocateMatrix(localRows, shared, &leftLocal, false, device);
 
-	ticks parallelStart = getticks();
-	parallelMultiplication(leftRows, shared, rightCols, left, right, parallelResult, device, useSharedMem);
-	ticks parallelFinish = getticks();
+    long** right;
+    allocateMatrix(shared, rightCols, &right, false, device);
 
-	// Print stuff
-	if(argc > 5)
-	{
-		printf("Left matrix:\n");
-		printMatrix(leftRows, shared, left);
+    long** parallelResult;
+    allocateMatrix(localRows, rightCols, &parallelResult, true, device);
 
-		printf("Right matrix:\n");
-		printMatrix(shared, rightCols, right);
+    long** leftFull = NULL;
 
-		// printf("Serially computed resultant matrix \n");
-		// printMatrix(leftRows, rightCols, serialResult);
+    if(rank == 0)
+    {
+        allocateMatrix(leftRows, shared, &leftFull, false, device);
+        generateMatrix(leftRows, shared, leftFull);
+        generateMatrix(shared, rightCols, right);
+    }
 
-		printf("Parallely computed resultant matrix \n");
-		printMatrix(leftRows, rightCols, parallelResult);
-	}
+    // Broadcast matrix B
+    for(unsigned int i = 0; i < shared; i++)
+    {
+        MPI_Bcast(right[i], rightCols, MPI_LONG, 0, MPI_COMM_WORLD);
+    }
 
-	// printf("Time for serial computation, %lf \n", (double)(serialFinish - serialStart) / (double)512000000.0);
-	printf("Time for parallel computation, %lf \n", (double)(parallelFinish - parallelStart) / (double)512000000.0);
+    // Scatter rows of A
+    if(rank == 0)
+    {
+        for(int r = 0; r < size; r++)
+        {
+            int sendRows = rowsPerRank;
 
-	// bool incorrect = false;
-	// for(unsigned int i = 0; i < leftRows; i++)
-	// {
-	// 	for(unsigned int j = 0; j < rightCols; j++)
-	// 	{
-	// 		if(serialResult[i][j] != parallelResult[i][j])
-	// 		{
-	// 			printf("WARNING: Incorrect parallel \n");
-	// 			incorrect = true;
-	// 			break;
-	// 		}
-	// 	}
-	// 	if(incorrect)
-	// 		break;
-	// }
+            if(r == size - 1)
+                sendRows = leftRows - rowsPerRank * (size - 1);
 
-	printf("Shared per row: %d \n", SHARED_PER_ROW);
+            if(r == 0)
+            {
+                for(unsigned int i = 0; i < sendRows; i++)
+                    memcpy(leftLocal[i], leftFull[i], shared*sizeof(long));
+            }
+            else
+            {
+                for(unsigned int i = 0; i < sendRows; i++)
+                    MPI_Send(leftFull[r*rowsPerRank + i], shared,
+                             MPI_LONG, r, 0, MPI_COMM_WORLD);
+            }
+        }
+    }
+    else
+    {
+        for(unsigned int i = 0; i < localRows; i++)
+        {
+            MPI_Recv(leftLocal[i], shared, MPI_LONG, 0, 0,MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        }
+    }
 
-	freeMatrix(leftRows, left);
-	freeMatrix(shared, right);
-	// freeMatrix(leftRows, serialResult);
-	freeMatrix(leftRows, parallelResult);
+    // GPU computation
+    parallelMultiplication(localRows, shared, rightCols, leftLocal, right, parallelResult, device, useSharedMem);
 
-	return 0;
+    //Gather results 
+    long** finalResult = NULL;
+
+    if(rank == 0)
+    {
+        allocateMatrix(leftRows, rightCols, &finalResult, true, device);
+    }
+
+    if(rank == 0)
+    {
+        for(int r = 0; r < size; r++)
+        {
+            int recvRows = rowsPerRank;
+
+            if(r == size - 1)
+                recvRows = leftRows - rowsPerRank * (size - 1);
+
+            if(r == 0)
+            {
+                for(unsigned int i = 0; i < recvRows; i++)
+                    memcpy(finalResult[i], parallelResult[i], rightCols*sizeof(long));
+            }
+            else
+            {
+                for(unsigned int i = 0; i < recvRows; i++)
+                    MPI_Recv(finalResult[r*rowsPerRank + i], rightCols, MPI_LONG, r, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            }
+        }
+    }
+    else
+    {
+        for(unsigned int i = 0; i < localRows; i++)
+            MPI_Send(parallelResult[i], rightCols, MPI_LONG, 0, 1, MPI_COMM_WORLD);
+    }
+
+    if(argc > 5 && rank == 0)
+    {
+        printf("Result matrix:\n");
+        printMatrix(leftRows, rightCols, finalResult);
+    }
+
+    if(rank == 0)
+        printf("Shared per row: %d \n", SHARED_PER_ROW);
+
+    freeMatrix(localRows, leftLocal);
+    freeMatrix(shared, right);
+    freeMatrix(localRows, parallelResult);
+
+    if(rank == 0)
+    {
+        freeMatrix(leftRows, leftFull);
+        freeMatrix(leftRows, finalResult);
+    }
+
+    MPI_Finalize();
+    return 0;
 }
