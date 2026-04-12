@@ -1,20 +1,6 @@
-CC = mpicc
-NVCC = nvcc
-
-CFLAGS = -O3
-CUDAFLAGS = -O3 -arch=sm_70
-
-all: matrix
-
-kernel.o: kernel.cu
-	$(NVCC) $(CUDAFLAGS) -c kernel.cu
-
-mpi.o: mpi.c
-	$(CC) $(CFLAGS) -c mpi.c
-
-matrix: mpi.o kernel.o
-	$(NVCC) -ccbin mpicc mpi.o kernel.o -o matrix
-
-clean:
-	rm -f *.o matrix
-
+matrix: mpi.c kernel.cu
+	mpixlc -O3 mpi.c -c -o mpi-xlc.o
+	nvcc -O3 -arch=sm_70 kernel.cu -c -o kernel-nvcc.o
+	mpixlc -O3 mpi-xlc.o kernel-nvcc.o \
+	-o matrix \
+	-L/usr/local/cuda-11.2/lib64/ -lcudadevrt -lcudart -lstdc++
