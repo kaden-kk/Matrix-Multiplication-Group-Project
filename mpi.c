@@ -17,7 +17,10 @@ int main(int argc, char** argv)
     if(argc < 5)
     {
         if(rank==0)
-            printf("Usage: rows shared cols sharedMem\n");
+        {
+            printf("Usage: ./matrix [leftRows] [shared] [rightCols] [useSharedMem] [optional print]\n");
+        }
+
         MPI_Finalize();
         return 1;
     }
@@ -31,12 +34,14 @@ int main(int argc, char** argv)
 
     int device = 0;
 
+    // Row distribution
     unsigned int rowsPerRank = leftRows / size;
     unsigned int localRows   = rowsPerRank;
 
     if(rank == size-1)
         localRows = leftRows - rowsPerRank*(size-1);
 
+    // Allocate matrices
     long **leftLocal;
     long **right;
     long **resultLocal;
@@ -57,7 +62,9 @@ int main(int argc, char** argv)
     // broadcast B
 
     for(unsigned int i=0;i<shared;i++)
+    {
         MPI_Bcast(right[i],rightCols,MPI_LONG,0,MPI_COMM_WORLD);
+    }
 
     // scatter rows of A 
 
@@ -73,29 +80,46 @@ int main(int argc, char** argv)
             if(r==0)
             {
                 for(unsigned int i=0;i<sendRows;i++)
+                {
                     memcpy(leftLocal[i],leftFull[i],shared*sizeof(long));
+                }
             }
             else
             {
                 for(unsigned int i=0;i<sendRows;i++)
-                    MPI_Send(leftFull[r*rowsPerRank+i],shared,MPI_LONG,r,0,MPI_COMM_WORLD);
+                {
+                    MPI_Send(leftFull[r*rowsPerRank+i], shared, MPI_LONG, r, 0, MPI_COMM_WORLD);
+                }
             }
         }
     }
     else
     {
         for(unsigned int i=0;i<localRows;i++)
-            MPI_Recv(leftLocal[i],shared,MPI_LONG,0,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+        {
+            MPI_Recv(leftLocal[i], shared, MPI_LONG, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        }
     }
 
+    // Synchronize before timing
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    double start = MPI_Wtime();
+
     // GPU computation
-    parallelMultiplication(localRows,shared,rightCols, leftLocal,right,resultLocal, device,useSharedMem);
+    parallelMultiplication(localRows, shared, rightCols, leftLocal, right, resultLocal, device, useSharedMem);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    double end = MPI_Wtime();
 
     // gather results
     long **finalResult=NULL;
 
     if(rank==0)
+    {
         allocateMatrix(leftRows,rightCols,&finalResult,true,device);
+    }
 
     if(rank==0)
     {
@@ -109,24 +133,40 @@ int main(int argc, char** argv)
             if(r==0)
             {
                 for(unsigned int i=0;i<recvRows;i++)
-                    memcpy(finalResult[i],resultLocal[i],rightCols*sizeof(long));
+                {
+                    memcpy(finalResult[i], resultLocal[i], rightCols*sizeof(long));
+                }
             }
             else
             {
                 for(unsigned int i=0;i<recvRows;i++)
-                    MPI_Recv(finalResult[r*rowsPerRank+i],rightCols,MPI_LONG,r,1,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+                {
+                    MPI_Recv(finalResult[r*rowsPerRank+i], rightCols, MPI_LONG, r, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                }
             }
         }
     }
     else
     {
         for(unsigned int i=0;i<localRows;i++)
-            MPI_Send(resultLocal[i],rightCols,MPI_LONG,0,1,MPI_COMM_WORLD);
+        {
+            MPI_Send(resultLocal[i], rightCols,MPI_LONG, 0, 1, MPI_COMM_WORLD);
+        }
     }
 
+    // Print timing
     if(rank==0)
-        printMatrix(leftRows,rightCols,finalResult);
+    {
+        printf("Total runtime: %f seconds\n", end - start);
+    }
 
+    if(argc > 5 && rank==0)
+    {
+        printf("Result matrix:\n");
+        printMatrix(leftRows,rightCols,finalResult);
+    }
+
+    // Free memory
     freeMatrix(localRows,leftLocal);
     freeMatrix(shared,right);
     freeMatrix(localRows,resultLocal);
@@ -138,5 +178,6 @@ int main(int argc, char** argv)
     }
 
     MPI_Finalize();
+
     return 0;
 }

@@ -30,6 +30,7 @@ static __inline__ ticks getticks(void)
     return (((unsigned long long)tbu0) << 32) | tbl;
 }
 
+extern "C"
 void allocateMatrix(unsigned int numRows, unsigned int numCols, long*** matrix, bool setZero, int device)
 {
 	cudaMallocManaged(matrix, numRows * sizeof(long*));
@@ -51,6 +52,7 @@ void allocateMatrix(unsigned int numRows, unsigned int numCols, long*** matrix, 
 	}
 }
 
+extern "C"
 void freeMatrix(unsigned int numRows, long** matrix)
 {
 	for(unsigned int row = 0; row < numRows; row++)
@@ -69,6 +71,7 @@ void prefetchMatrix(unsigned int numRows, unsigned int numCols, long** matrix, i
 	}
 }
 
+extern "C"
 void generateMatrix(unsigned int numRows, unsigned int numCols, long** matrix)
 {
 	for(unsigned int row = 0; row < numRows; row++)
@@ -97,6 +100,7 @@ void multiplyMatricesSerial(unsigned int leftRows, unsigned int shared, unsigned
 	}
 }
 
+extern "C"
 void printMatrix(unsigned int numRows, unsigned int numCols, long** matrix)
 {
 	printf("[");
@@ -239,6 +243,7 @@ __global__ void multiplyMatricesParallel(unsigned int leftRows, unsigned int sha
 	}
 }
 
+extern "C"
 void parallelMultiplication(unsigned int leftRows, unsigned int shared, unsigned int rightCols, long** left, 
 	long** right, long** result, int device, bool useSharedMem)
 {
