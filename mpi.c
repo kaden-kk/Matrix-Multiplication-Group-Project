@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <mpi.h>
+#include <cuda_runtime.h>
 
 #include "kernel.h"
 
@@ -14,11 +15,16 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD,&rank);
     MPI_Comm_size(MPI_COMM_WORLD,&size);
 
+    int deviceCount;
+    cudaGetDeviceCount(&deviceCount);
+    int device = rank % deviceCount;
+    cudaSetDevice(device);
+
     if(argc < 7)
     {
         if(rank==0)
         {
-            printf("Usage: ./matrix [leftRows] [shared] [rightCols] [useSharedMem] [useTranspose] [optional print]\n");
+            printf("Usage: ./matrix [leftRows] [shared] [rightCols] [useSharedMem] [useTranspose] [checkSerial] [optional print]\n");
         }
 
         MPI_Finalize();
@@ -37,8 +43,6 @@ int main(int argc, char** argv)
 
     int check = atoi(argv[6]);
     bool checkSerial = check != 0;
-
-    int device = rank % 4;
 
     // Row distribution
     unsigned int rowsPerRank = leftRows / size;
@@ -167,7 +171,7 @@ int main(int argc, char** argv)
             {
                 for(unsigned int i=0;i<recvRows;i++)
                 {
-                    MPI_Recv(finalResult[r*rowsPerRank+i], rightCols, MPI_INTEGER, r, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    MPI_Recv(finalResult[r*rowsPerRank+i], rightCols, MPI_INT, r, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 }
             }
         }
@@ -176,7 +180,7 @@ int main(int argc, char** argv)
     {
         for(unsigned int i=0;i<localRows;i++)
         {
-            MPI_Send(resultLocal[i], rightCols,MPI_INTEGER, 0, 1, MPI_COMM_WORLD);
+            MPI_Send(resultLocal[i], rightCols,MPI_INT, 0, 1, MPI_COMM_WORLD);
         }
     }
 
