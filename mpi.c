@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <mpi.h>
+#include <cuda_runtime.h>
 
 #include "kernel.h"
 
@@ -14,11 +15,16 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD,&rank);
     MPI_Comm_size(MPI_COMM_WORLD,&size);
 
+    int deviceCount;
+    cudaGetDeviceCount(&deviceCount);
+    int device = rank % deviceCount;
+    cudaSetDevice(device);
+
     if(argc < 7)
     {
         if(rank==0)
         {
-            printf("Usage: ./matrix [leftRows] [shared] [rightCols] [useSharedMem] [useTranspose] [optional print]\n");
+            printf("Usage: ./matrix [leftRows] [shared] [rightCols] [useSharedMem] [useTranspose] [checkSerial] [optional print]\n");
         }
 
         MPI_Finalize();
@@ -38,8 +44,6 @@ int main(int argc, char** argv)
     int check = atoi(argv[6]);
     bool checkSerial = check != 0;
 
-    int device = rank % 4;
-
     // Row distribution
     unsigned int rowsPerRank = leftRows / size;
     unsigned int localRows   = rowsPerRank;
@@ -52,17 +56,32 @@ int main(int argc, char** argv)
     short **right;
     int **resultLocal;
 
-    allocateMatrix(localRows,shared,(void***)&leftLocal, sizeof(short));
-    allocateMatrix(shared,rightCols,(void***)&right, sizeof(short));
-    allocateMatrix(localRows,rightCols,(void***)&resultLocal, sizeof(int));
+    if(allocateMatrix(localRows,shared,(void***)&leftLocal, sizeof(short)) == 1)
+    {
+        fprintf(stderr, "CudaMalloc failed. Use smaller matrices\n");
+        return 1;
+    }
+    if(allocateMatrix(shared,rightCols,(void***)&right, sizeof(short)) == 1)
+    {
+        fprintf(stderr, "CudaMalloc failed. Use smaller matrices\n");
+        return 1;
+    }
+    if(allocateMatrix(localRows,rightCols,(void***)&resultLocal, sizeof(int)) == 1)
+    {
+        fprintf(stderr, "CudaMalloc failed. Use smaller matrices\n");
+        return 1;
+    }
 
     short **leftFull = NULL;
 
     if(rank==0)
     {
-        allocateMatrix(leftRows,shared,(void***)&leftFull, sizeof(short));
-        generateMatrix(leftRows,shared,leftFull);
-        generateMatrix(shared,rightCols,right);
+        if(allocateMatrix(leftRows,shared,(void***)&leftFull, sizeof(short)) == 1)
+        {
+            fprintf(stderr, "CudaMalloc failed. Use smaller matrices\n");
+        }
+        generateMatrix(leftRows,shared,leftFull,!checkSerial);
+        generateMatrix(shared,rightCols,right,!checkSerial);
     }
 
     double start = MPI_Wtime();
@@ -72,7 +91,11 @@ int main(int argc, char** argv)
     if(useTranspose && rank == 0)
     {
         double transposeStart = MPI_Wtime();
-        allocateMatrix(rightCols,shared,(void***)&rightTranspose, sizeof(short));
+        if(allocateMatrix(rightCols,shared,(void***)&rightTranspose, sizeof(short)) == 1)
+        {
+            fprintf(stderr, "CudaMalloc failed. Use smaller matrices\n");
+            return 1;
+        }
         transposeMatrix(shared, rightCols, right, rightTranspose,device);
         freeMatrix(shared,(void**)right);
         right = rightTranspose;
@@ -137,14 +160,16 @@ int main(int argc, char** argv)
 
     MPI_Barrier(MPI_COMM_WORLD);
 
-    double end = MPI_Wtime();
-
     // gather results
     int **finalResult=NULL;
 
     if(rank==0)
     {
-        allocateMatrix(leftRows,rightCols,(void***)&finalResult, sizeof(int));
+        if(allocateMatrix(leftRows,rightCols,(void***)&finalResult, sizeof(int)) == 1)
+        {
+            fprintf(stderr, "CudaMalloc failed. Use smaller matrices\n");
+            return 1;
+        }
     }
 
     if(rank==0)
@@ -167,7 +192,7 @@ int main(int argc, char** argv)
             {
                 for(unsigned int i=0;i<recvRows;i++)
                 {
-                    MPI_Recv(finalResult[r*rowsPerRank+i], rightCols, MPI_INTEGER, r, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    MPI_Recv(finalResult[r*rowsPerRank+i], rightCols, MPI_INT, r, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 }
             }
         }
@@ -176,8 +201,17 @@ int main(int argc, char** argv)
     {
         for(unsigned int i=0;i<localRows;i++)
         {
-            MPI_Send(resultLocal[i], rightCols,MPI_INTEGER, 0, 1, MPI_COMM_WORLD);
+            MPI_Send(resultLocal[i], rightCols,MPI_INT, 0, 1, MPI_COMM_WORLD);
         }
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    double end = MPI_Wtime();
+
+    // Print timing
+    if(rank==0)
+    {
+        printf("Total runtime: %f seconds\n", end - start);
     }
 
     if(argc > 7 && rank==0)
@@ -201,35 +235,47 @@ int main(int argc, char** argv)
     }
 
     bool failed = false;
-    if(checkSerial && rank==0)
+    if(rank==0)
     {
         int** serial;
-        allocateMatrix(leftRows,rightCols,(void***)&serial, sizeof(int));
+        if(checkSerial)
+        {
+            if(allocateMatrix(leftRows,rightCols,(void***)&serial, sizeof(int)) == 1)
+            {
+                fprintf(stderr, "CudaMalloc failed. Use smaller matrices\n");
+                return 1;
+            }
 
-        double serialStart = MPI_Wtime();
-        multiplyMatricesSerial(leftRows, shared, rightCols, leftFull, right, serial, useTranspose);
-        double serialEnd = MPI_Wtime();
-        printf("Serial runtime: %f seconds\n", serialEnd - serialStart);
-        
+            double serialStart = MPI_Wtime();
+            multiplyMatricesSerial(leftRows, shared, rightCols, leftFull, right, serial, useTranspose);
+            double serialEnd = MPI_Wtime();
+            printf("Serial runtime: %f seconds\n", serialEnd - serialStart);
+            printf("Checking results...\n");
+            failed = checkResults(leftRows,rightCols,finalResult,serial,shared,device) != 0;
+        }
+        else
+        {
+            serial = NULL;
+        }
 
-        if(argc > 7)
+        if(argc > 7 && checkSerial)
         {
             printf("Serial matrix:\n");
             printMatrixInt(leftRows,rightCols,serial);
         }
 
-        failed = checkResults(leftRows,rightCols,finalResult,serial,shared,device) != 0;
+        // Remove this if statement if you want to check everytime (even when serial not computed)
+        if(checkSerial)
+        {
+            failed = checkResults(leftRows,rightCols,finalResult,serial,shared,device) != 0;
+        }
 
         freeMatrix(leftRows,(void**)serial);
     }
     if(failed)
         printf("Multiplcation incorrect\n");
-
-    // Print timing
-    if(rank==0)
-    {
-        printf("Total runtime: %f seconds\n", end - start);
-    }
+    else
+        printf("Success\n");
 
     // Free memory
     freeMatrix(localRows,(void**)leftLocal);
