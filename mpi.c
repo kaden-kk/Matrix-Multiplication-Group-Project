@@ -69,6 +69,7 @@ int main(int argc, char** argv)
         generateMatrix(shared,rightCols,right);
     }
 
+    MPI_Barrier(MPI_COMM_WORLD);
     double start = MPI_Wtime();
 
     short **rightTranspose = NULL;
@@ -129,9 +130,6 @@ int main(int argc, char** argv)
         }
     }
 
-    // Synchronize before timing
-    MPI_Barrier(MPI_COMM_WORLD);
-
     // GPU computation
     double parallelStart = MPI_Wtime();
     parallelMultiplication(localRows, shared, rightCols, leftLocal, right, resultLocal, device, useSharedMem, useTranspose);
@@ -139,9 +137,7 @@ int main(int argc, char** argv)
     if(rank == 0)
         printf("Parallel runtime: %f seconds\n", parallelEnd - parallelStart);
 
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    double end = MPI_Wtime();
+    
 
     // gather results
     int **finalResult=NULL;
@@ -183,6 +179,9 @@ int main(int argc, char** argv)
             MPI_Send(resultLocal[i], rightCols,MPI_INT, 0, 1, MPI_COMM_WORLD);
         }
     }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    double end = MPI_Wtime();
 
     if(argc > 7 && rank==0)
     {
