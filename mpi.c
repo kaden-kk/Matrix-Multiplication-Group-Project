@@ -236,7 +236,6 @@ int main(int argc, char** argv)
     int** serial = NULL;
     if(rank==0)
     {
-        int** serial;
         if(checkSerial)
         {
             if(allocateMatrix(leftRows,rightCols,(void***)&serial, sizeof(int)) == 1)
@@ -263,8 +262,6 @@ int main(int argc, char** argv)
             printf("Checking results...\n");
             failed = checkResults(leftRows,rightCols,finalResult,serial,shared,device) != 0;
         }
-
-        freeMatrix(leftRows,(void**)serial);
     }
     if(rank == 0)
     {

@@ -394,6 +394,8 @@ void transposeMatrix(unsigned int rows, unsigned int cols, short** original, sho
 	prefetchMatrix(rows, cols, (void**)original, sizeof(short), device);
 	prefetchMatrix(cols, rows, (void**)result, sizeof(short), device);
 
+	cudaDeviceSynchronize();
+
 	transpose<<<NUM_BLOCKS, TILE_WIDTH>>>(rows, cols, original, result);
 
 	cudaDeviceSynchronize();
