@@ -272,10 +272,13 @@ int main(int argc, char** argv)
 
         freeMatrix(leftRows,(void**)serial);
     }
-    if(failed)
-        printf("Multiplcation incorrect\n");
-    else
-        printf("Success\n");
+    if(rank == 0)
+    {
+        if(failed)
+            printf("Multiplcation incorrect\n");
+        else
+            printf("Success\n");
+    }
 
     // Free memory
     freeMatrix(localRows,(void**)leftLocal);

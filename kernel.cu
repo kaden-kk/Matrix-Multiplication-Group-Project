@@ -50,11 +50,8 @@ void freeMatrix(unsigned int numRows, void** matrix)
 
 void prefetchMatrix(unsigned int numRows, unsigned int numCols, void** matrix, int dataSize, int device)
 {
-	cudaMemPrefetchAsync(matrix, numRows * sizeof(void*), device, 0);
-	for(unsigned int row = 0; row < numRows; row++)
-	{
-		cudaMemPrefetchAsync(matrix[row], numCols * dataSize, device, 0);
-	}
+	int totalSize = (numRows * sizeof(void*)) + (numRows * numCols * dataSize);
+	cudaMemPrefetchAsync(matrix, totalSize, device, 0);
 }
 
 __global__ void generateMatrixParallel(unsigned int numRows, unsigned int numCols, short** matrix, bool uniform)

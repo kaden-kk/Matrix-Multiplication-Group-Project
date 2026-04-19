@@ -15,7 +15,7 @@ module load xl_r spectrum-mpi cuda
 
 /gpfs/u/scratch/PCPG/PCPGlmrn/cache 4096 4096 4096 1
 
-/gpfs/u/scratch/PCPG/PCPGlmrn/cache 8192 8192 8192 1
+/gpfs/u/scratch/PCPG/PCPGlmrn/cache 8192 8192 8192 0
 
 /gpfs/u/scratch/PCPG/PCPGlmrn/cache 16384 16384 16384 0
 
