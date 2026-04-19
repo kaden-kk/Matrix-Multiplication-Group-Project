@@ -250,8 +250,6 @@ int main(int argc, char** argv)
             multiplyMatricesSerial(leftRows, shared, rightCols, leftFull, right, serial, useTranspose);
             double serialEnd = MPI_Wtime();
             printf("Serial runtime: %f seconds\n", serialEnd - serialStart);
-            printf("Checking results...\n");
-            failed = checkResults(leftRows,rightCols,finalResult,serial,shared,device) != 0;
         }
         else
         {
@@ -267,6 +265,7 @@ int main(int argc, char** argv)
         // Remove this if statement if you want to check everytime (even when serial not computed)
         if(checkSerial)
         {
+            printf("Checking results...\n");
             failed = checkResults(leftRows,rightCols,finalResult,serial,shared,device) != 0;
         }
 
