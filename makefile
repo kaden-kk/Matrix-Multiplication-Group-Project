@@ -6,4 +6,3 @@ matrix: mpi.c kernel.cu
 
 clean:
 	rm -f *.o matrix
-

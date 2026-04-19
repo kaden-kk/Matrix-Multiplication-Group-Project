@@ -7,8 +7,8 @@
 extern "C" {
 #endif
 
-void allocateMatrix(unsigned int numRows, unsigned int numCols, void*** matrix, int dataSize);
-void generateMatrix(unsigned int numRows, unsigned int numCols, short** matrix);
+int allocateMatrix(unsigned int numRows, unsigned int numCols, void*** matrix, int dataSize);
+void generateMatrix(unsigned int numRows, unsigned int numCols, short** matrix, bool uniform);
 void freeMatrix(unsigned int numRows, void** matrix);
 void printMatrixShort(unsigned int numRows, unsigned int numCols, short** matrix);
 void printMatrixInt(unsigned int numRows, unsigned int numCols, int** matrix);

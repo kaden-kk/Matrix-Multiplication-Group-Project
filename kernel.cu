@@ -6,7 +6,6 @@
 #include <math.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include <curand_kernel.h>
 
 typedef unsigned long long ticks;
 #define TILE_WIDTH 32 // Must be <= 32 since it squared is the number of threads for multiplication
@@ -15,18 +14,33 @@ typedef unsigned long long ticks;
 #define SHARED_BUFFER_SIZE 49152 // Max total size of shared memory buffers per block
 
 extern "C"
-void allocateMatrix(unsigned int numRows, unsigned int numCols, void*** matrix, int dataSize)
+int allocateMatrix(unsigned int numRows, unsigned int numCols, void*** matrix, int dataSize)
 {
-	cudaMallocManaged(matrix, numRows * sizeof(void*));
+	cudaError_t err;
+	err = cudaMallocManaged(matrix, numRows * sizeof(void*));
+	if(err != cudaSuccess)
+	{
+		fprintf(stderr, "CudaMallocManaged failed\n");
+		return 1;
+	}
 	for(unsigned int row = 0; row < numRows; row++)
 	{
-		cudaMallocManaged(&((*matrix)[row]), numCols * dataSize);
+		err = cudaMallocManaged(&((*matrix)[row]), numCols * dataSize);
+		if(err != cudaSuccess)
+		{
+			fprintf(stderr, "CudaMallocManaged failed\n");
+			return 1;
+		}
 	}
+	return 0;
 }
 
 extern "C"
 void freeMatrix(unsigned int numRows, void** matrix)
 {
+	if(matrix == NULL)
+		return;
+
 	for(unsigned int row = 0; row < numRows; row++)
 	{
 		cudaFree(matrix[row]);
@@ -36,14 +50,11 @@ void freeMatrix(unsigned int numRows, void** matrix)
 
 void prefetchMatrix(unsigned int numRows, unsigned int numCols, void** matrix, int dataSize, int device)
 {
-	cudaMemPrefetchAsync(matrix, numRows * sizeof(void*), device, 0);
-	for(unsigned int row = 0; row < numRows; row++)
-	{
-		cudaMemPrefetchAsync(matrix[row], numCols * dataSize, device, 0);
-	}
+	int totalSize = (numRows * sizeof(void*)) + (numRows * numCols * dataSize);
+	cudaMemPrefetchAsync(matrix, totalSize, device, 0);
 }
 
-__global__ void generateMatrixParallel(unsigned int numRows, unsigned int numCols, short** matrix)
+__global__ void generateMatrixParallel(unsigned int numRows, unsigned int numCols, short** matrix, bool uniform)
 {
 	unsigned long blockId = blockIdx.x;
 
@@ -66,11 +77,23 @@ __global__ void generateMatrixParallel(unsigned int numRows, unsigned int numCol
 			break;
 		}
 
-		// Handle indices in this block only (for this thread's row)
-		for(unsigned int i = 0; i < TILE_WIDTH && col + i < numCols; i++)
+		// Set all values to 1
+		if(uniform)
 		{
-			// matrix[row][col+i] = (rand() % 9) + 1; // Random number from 1 to 9 (does not work in device code)
-			matrix[row][col+i] = 1;
+			// Handle indices in this block only (for this thread's row)
+			for(unsigned int i = 0; i < TILE_WIDTH && col + i < numCols; i++)
+			{
+				matrix[row][col+i] = 1;
+			}
+		}
+		// Values aren't random, but differ enough to reveal problems with multiplicaiton / tranposing
+		else
+		{
+			// Handle indices in this block only (for this thread's row)
+			for(unsigned int i = 0; i < TILE_WIDTH && col + i < numCols; i++)
+			{
+				matrix[row][col+i] = ((col + i) % TILE_WIDTH) + 1;
+			}
 		}
 
 		blockId += gridDim.x;
@@ -78,9 +101,9 @@ __global__ void generateMatrixParallel(unsigned int numRows, unsigned int numCol
 }
 
 extern "C"
-void generateMatrix(unsigned int numRows, unsigned int numCols, short** matrix)
+void generateMatrix(unsigned int numRows, unsigned int numCols, short** matrix, bool uniform)
 {
-	generateMatrixParallel<<<NUM_BLOCKS, TILE_WIDTH>>>(numRows, numCols, matrix);
+	generateMatrixParallel<<<NUM_BLOCKS, TILE_WIDTH>>>(numRows, numCols, matrix, uniform);
 	cudaDeviceSynchronize();
 }
 
@@ -239,7 +262,7 @@ __global__ void multiplyMatricesParallelTranspose(unsigned int leftRows, unsigne
 		unsigned int row = firstRow + rowOffset;
 		unsigned int col = firstCol + colOffset;
 
-		if (firstRow >= leftRows || firstCol >= rightCols)
+		if (row >= leftRows || col >= rightCols)
 			break;
 
 		long sum = 0;
@@ -271,7 +294,7 @@ __global__ void multiplyMatricesParallelTranspose(unsigned int leftRows, unsigne
 
 				for (int k = 0; k < TILE_WIDTH; k++)
 				{
-					sum += As[rowOffset][k] * Bs[k][colOffset];
+					sum += As[rowOffset][k] * Bs[colOffset][k];
 				}
 
 				__syncthreads();
@@ -280,19 +303,13 @@ __global__ void multiplyMatricesParallelTranspose(unsigned int leftRows, unsigne
 		else
 		{
 			// Non-shared memory version
-			if (row < leftRows && col < rightCols)
+			for (unsigned int k = 0; k < shared; k++)
 			{
-				for (unsigned int k = 0; k < shared; k++)
-				{
-					sum += left[row][k] * right[col][k];
-				}
+				sum += left[row][k] * right[col][k];
 			}
 		}
 
-		if (row < leftRows && col < rightCols)
-		{
-			result[row][col] += sum;
-		}
+		result[row][col] = sum;
 
 		blockId += gridDim.x;
 	}
@@ -316,7 +333,7 @@ __global__ void multiplyMatricesParallel(unsigned int leftRows, unsigned int sha
 		unsigned int row = firstRow + rowOffset;
 		unsigned int col = firstCol + colOffset;
 
-		if (firstRow >= leftRows || firstCol >= rightCols)
+		if (row >= leftRows || col >= rightCols)
 			break;
 
 		long sum = 0;
@@ -357,19 +374,13 @@ __global__ void multiplyMatricesParallel(unsigned int leftRows, unsigned int sha
 		else
 		{
 			// Non-shared memory version
-			if (row < leftRows && col < rightCols)
+			for (unsigned int k = 0; k < shared; k++)
 			{
-				for (unsigned int k = 0; k < shared; k++)
-				{
-					sum += left[row][k] * right[k][col];
-				}
+				sum += left[row][k] * right[k][col];
 			}
 		}
 
-		if (row < leftRows && col < rightCols)
-		{
-			result[row][col] += sum;
-		}
+		result[row][col] = sum;
 
 		blockId += gridDim.x;
 	}
@@ -452,8 +463,14 @@ __global__ void parallelCheck(unsigned int numRows, unsigned int numCols, int** 
 			for(unsigned int i = 0; i < TILE_WIDTH && col + i < numCols; i++)
 			{
 				if(parallel[row][col+i] != correct)
+				{
 					failed = true;
+					break;
+				}
 			}
+
+			if(failed)
+				break;
 
 			blockId += gridDim.x;
 		}
@@ -477,8 +494,14 @@ __global__ void parallelCheck(unsigned int numRows, unsigned int numCols, int** 
 			for(unsigned int i = 0; i < TILE_WIDTH && col + i < numCols; i++)
 			{
 				if(parallel[row][col+i] != serial[row][col+i])
+				{
 					failed = true;
+					break;
+				}
 			}
+
+			if(failed)
+				break;
 
 			blockId += gridDim.x;
 		}
@@ -495,7 +518,8 @@ int checkResults(unsigned int numRows, unsigned int numCols, int** parallel, int
 	cudaSetDevice(device);
 
     prefetchMatrix(numRows, numCols, (void**)parallel, sizeof(int), device);
-    prefetchMatrix(numRows, numCols, (void**)serial, sizeof(int), device);
+    if(serial != NULL)
+    	prefetchMatrix(numRows, numCols, (void**)serial, sizeof(int), device);
 
     cudaDeviceSynchronize();
 
