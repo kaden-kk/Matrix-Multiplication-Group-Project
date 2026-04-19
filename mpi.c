@@ -235,6 +235,7 @@ int main(int argc, char** argv)
     }
 
     bool failed = false;
+    int** serial = NULL;
     if(rank==0)
     {
         int** serial;
@@ -250,10 +251,6 @@ int main(int argc, char** argv)
             multiplyMatricesSerial(leftRows, shared, rightCols, leftFull, right, serial, useTranspose);
             double serialEnd = MPI_Wtime();
             printf("Serial runtime: %f seconds\n", serialEnd - serialStart);
-        }
-        else
-        {
-            serial = NULL;
         }
 
         if(argc > 7 && checkSerial)
@@ -280,6 +277,10 @@ int main(int argc, char** argv)
     }
 
     // Free memory
+    if(rank == 0)
+    {
+        printf("Freeing matrices...\n");
+    }
     freeMatrix(localRows,(void**)leftLocal);
     if(useTranspose)
         freeMatrix(rightCols,(void**)right);
@@ -291,6 +292,7 @@ int main(int argc, char** argv)
     {
         freeMatrix(leftRows,(void**)leftFull);
         freeMatrix(leftRows,(void**)finalResult);
+        freeMatrix(leftRows,(void**)serial);
     }
 
     MPI_Finalize();
