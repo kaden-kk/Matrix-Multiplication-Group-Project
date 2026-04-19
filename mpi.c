@@ -84,6 +84,7 @@ int main(int argc, char** argv)
         generateMatrix(shared,rightCols,right,!checkSerial);
     }
 
+    MPI_Barrier(MPI_COMM_WORLD);
     double start = MPI_Wtime();
 
     short **rightTranspose = NULL;
@@ -147,9 +148,6 @@ int main(int argc, char** argv)
             MPI_Recv(leftLocal[i], shared, MPI_SHORT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         }
     }
-
-    // Synchronize before timing
-    MPI_Barrier(MPI_COMM_WORLD);
 
     // GPU computation
     double parallelStart = MPI_Wtime();
