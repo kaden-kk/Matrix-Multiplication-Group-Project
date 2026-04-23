@@ -79,31 +79,36 @@ __global__ void generateMatrixParallel(unsigned int numRows, unsigned int numCol
 	// Grid stride until it goes out of bounds
 	while(true)
 	{
-		unsigned int row = ((blockId / blocksPerRow) * TILE_WIDTH) + threadIdx.x;
+		unsigned int firstRow = (blockId / blocksPerRow) * TILE_WIDTH;
 		unsigned int col = (blockId % blocksPerRow) * TILE_WIDTH;
 
+		unsigned int row = firstRow + threadIdx.x;
+
 		// Grid-strided too far
-		if(row >= numRows || col >= numCols)
+		if(firstRow >= numRows || col >= numCols)
 		{
 			break;
 		}
 
-		// Set all values to 1
-		if(uniform)
+		if(row < numRows)
 		{
-			// Handle indices in this block only (for this thread's row)
-			for(unsigned int i = 0; i < TILE_WIDTH && col + i < numCols; i++)
+			// Set all values to 1
+			if(uniform)
 			{
-				matrix[row][col+i] = 1;
+				// Handle indices in this block only (for this thread's row)
+				for(unsigned int i = 0; i < TILE_WIDTH && col + i < numCols; i++)
+				{
+					matrix[row][col+i] = 1;
+				}
 			}
-		}
-		// Values aren't random, but differ enough to reveal problems with multiplicaiton / tranposing
-		else
-		{
-			// Handle indices in this block only (for this thread's row)
-			for(unsigned int i = 0; i < TILE_WIDTH && col + i < numCols; i++)
+			// Values aren't random, but differ enough to reveal problems with multiplicaiton / tranposing
+			else
 			{
-				matrix[row][col+i] = ((col + i) % TILE_WIDTH) + 1;
+				// Handle indices in this block only (for this thread's row)
+				for(unsigned int i = 0; i < TILE_WIDTH && col + i < numCols; i++)
+				{
+					matrix[row][col+i] = ((col + i) % TILE_WIDTH) + 1;
+				}
 			}
 		}
 
@@ -203,17 +208,20 @@ __global__ void multiplyMatricesParallel(unsigned int leftRows, unsigned int sha
 		unsigned int row = firstRow + rowOffset;
 		unsigned int col = firstCol + colOffset;
 
-		if (row >= leftRows || col >= rightCols)
+		if (firstRow >= leftRows || firstCol >= rightCols)
 			break;
 
-		int sum = 0;
-
-		for (unsigned int k = 0; k < shared; k++)
+		if (row < leftRows && col < rightCols)
 		{
-			sum += left[row][k] * right[k][col];
-		}
+			int sum = 0;
 
-		result[row][col] = sum;
+			for (unsigned int k = 0; k < shared; k++)
+			{
+				sum += left[row][k] * right[k][col];
+			}
+
+			result[row][col] = sum;
+		}
 
 		blockId += gridDim.x;
 	}
@@ -237,17 +245,20 @@ __global__ void multiplyMatricesParallelRightTranspose(unsigned int leftRows, un
 		unsigned int row = firstRow + rowOffset;
 		unsigned int col = firstCol + colOffset;
 
-		if (row >= leftRows || col >= rightCols)
+		if (firstRow >= leftRows || firstCol >= rightCols)
 			break;
 
-		int sum = 0;
-
-		for (unsigned int k = 0; k < shared; k++)
+		if (row < leftRows && col < rightCols)
 		{
-			sum += left[row][k] * right[col][k];
-		}
+			int sum = 0;
 
-		result[row][col] = sum;
+			for (unsigned int k = 0; k < shared; k++)
+			{
+				sum += left[row][k] * right[col][k];
+			}
+
+			result[row][col] = sum;
+		}
 
 		blockId += gridDim.x;
 	}
@@ -271,17 +282,20 @@ __global__ void multiplyMatricesParallelLeftTranspose(unsigned int leftRows, uns
 		unsigned int row = firstRow + rowOffset;
 		unsigned int col = firstCol + colOffset;
 
-		if (row >= leftRows || col >= rightCols)
+		if (firstRow >= leftRows || firstCol >= rightCols)
 			break;
 
-		int sum = 0;
-
-		for (unsigned int k = 0; k < shared; k++)
+		if (row < leftRows && col < rightCols)
 		{
-			sum += left[k][row] * right[k][col];
-		}
+			int sum = 0;
 
-		result[row][col] = sum;
+			for (unsigned int k = 0; k < shared; k++)
+			{
+				sum += left[k][row] * right[k][col];
+			}
+
+			result[row][col] = sum;
+		}
 
 		blockId += gridDim.x;
 	}
@@ -305,27 +319,38 @@ __global__ void multiplyMatricesParallelDoubleTranspose(unsigned int leftRows, u
 		unsigned int row = firstRow + rowOffset;
 		unsigned int col = firstCol + colOffset;
 
-		if (row >= leftRows || col >= rightCols)
+		if (firstRow >= leftRows || firstCol >= rightCols)
 			break;
 
-		int sum = 0;
-
-		for (unsigned int k = 0; k < shared; k++)
+		if (row < leftRows && col < rightCols)
 		{
-			sum += left[k][row] * right[col][k];
-		}
+			int sum = 0;
 
-		result[row][col] = sum;
+			for (unsigned int k = 0; k < shared; k++)
+			{
+				sum += left[k][row] * right[col][k];
+			}
+
+			result[row][col] = sum;
+		}
 
 		blockId += gridDim.x;
 	}
 }
 
 void parallelMultiplication(unsigned int leftRows, unsigned int shared, unsigned int rightCols, short** left, 
-	short** right, int** result, int device)
+	short** right, int** result, int device, bool prefetchRightFirst)
 {
-	prefetchMatrix(leftRows, shared, (void**)left, sizeof(short), device);
-	prefetchMatrix(shared, rightCols, (void**)right, sizeof(short), device);
+	if(prefetchRightFirst)
+	{
+		prefetchMatrix(shared, rightCols, (void**)right, sizeof(short), device);
+		prefetchMatrix(leftRows, shared, (void**)left, sizeof(short), device);
+	}
+	else
+	{
+		prefetchMatrix(leftRows, shared, (void**)left, sizeof(short), device);
+		prefetchMatrix(shared, rightCols, (void**)right, sizeof(short), device);
+	}
 	prefetchMatrix(leftRows, rightCols, (void**)result, sizeof(int), device);
 
 	printf("\nParallel timings:\n");
@@ -369,9 +394,9 @@ void parallelMultiplication(unsigned int leftRows, unsigned int shared, unsigned
 int main(int argc, char** argv)
 {
 	srand(time(NULL)); // Set random seed for this execution
-	if(argc < 5)
+	if(argc < 6)
 	{
-		fprintf(stderr, "ERROR: Format is [executable] [left matrix num rows] [shared dimension] [right matrix num cols] [non-zero for testing serial]\n");
+		fprintf(stderr, "ERROR: Format is [executable] [left matrix num rows] [shared dimension] [right matrix num cols] [non-zero for prefetch right first] [non-zero for testing serial]\n");
 		return 1;
 	}
 
@@ -396,16 +421,19 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	int useSerial = atoi(argv[4]);
+	int prefetchSetting = atoi(argv[4]);
+	bool prefetchRightFirst = prefetchSetting != 0;
+
+	int useSerial = atoi(argv[5]);
 	bool testSerial = useSerial != 0;
 
-	int device = 0; // Won't worry about multiple GPUs yet (likely will be handled with MPI like HW4)
+	int device = 0;
+
+	short** right;
+	allocateMatrix(leftRows, shared, (void***)&right, sizeof(short));
 
 	short** left;
 	allocateMatrix(leftRows, shared, (void***)&left, sizeof(short));
-	
-	short** right;
-	allocateMatrix(leftRows, shared, (void***)&right, sizeof(short));
 
 	int** serialResult;
 	if(testSerial)
@@ -417,7 +445,7 @@ int main(int argc, char** argv)
 	generateMatrix(leftRows, shared, left, true);
 	generateMatrix(shared, rightCols, right, true);
 
-	parallelMultiplication(leftRows, shared, rightCols, left, right, parallelResult, device);
+	parallelMultiplication(leftRows, shared, rightCols, left, right, parallelResult, device, prefetchRightFirst);
 
 	if(testSerial)
 	{
