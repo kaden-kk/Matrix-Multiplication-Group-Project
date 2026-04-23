@@ -273,45 +273,45 @@ __global__ void multiplyMatricesParallelTranspose(unsigned int leftRows, unsigne
 		if (firstRow >= leftRows || firstCol >= rightCols)
 			break;
 
-		// Only compute if this thread has valid position
-		if (row < leftRows && col < rightCols)
+		long sum = 0;
+
+		if (useSharedMem)
 		{
-			long sum = 0;
+			// Shared memory tiles
+			__shared__ long As[TILE_WIDTH][TILE_WIDTH];
+			__shared__ long Bs[TILE_WIDTH][TILE_WIDTH];
 
-			if (useSharedMem)
+			for (unsigned int tile = 0; tile < (shared + TILE_WIDTH - 1) / TILE_WIDTH; tile++)
 			{
-				// Shared memory tiles
-				__shared__ long As[TILE_WIDTH][TILE_WIDTH];
-				__shared__ long Bs[TILE_WIDTH][TILE_WIDTH];
+				unsigned int tiledCol = tile * TILE_WIDTH + colOffset;
+				unsigned int tiledRow = tile * TILE_WIDTH + rowOffset;
 
-				for (unsigned int tile = 0; tile < (shared + TILE_WIDTH - 1) / TILE_WIDTH; tile++)
+				// Load A tile
+				if (row < leftRows && tiledCol < shared)
+					As[rowOffset][colOffset] = left[row][tiledCol];
+				else
+					As[rowOffset][colOffset] = 0;
+
+				// Load B tile
+				if (tiledRow < shared && col < rightCols)
+					Bs[rowOffset][colOffset] = right[col][tiledRow];
+				else
+					Bs[rowOffset][colOffset] = 0;
+
+				__syncthreads();
+
+				for (int k = 0; k < TILE_WIDTH; k++)
 				{
-					unsigned int tiledCol = tile * TILE_WIDTH + colOffset;
-					unsigned int tiledRow = tile * TILE_WIDTH + rowOffset;
-
-					// Load A tile
-					if (row < leftRows && tiledCol < shared)
-						As[rowOffset][colOffset] = left[row][tiledCol];
-					else
-						As[rowOffset][colOffset] = 0;
-
-					// Load B tile
-					if (tiledRow < shared && col < rightCols)
-						Bs[rowOffset][colOffset] = right[col][tiledRow];
-					else
-						Bs[rowOffset][colOffset] = 0;
-
-					__syncthreads();
-
-					for (int k = 0; k < TILE_WIDTH; k++)
-					{
-						sum += As[rowOffset][k] * Bs[colOffset][k];
-					}
-
-					__syncthreads();
+					sum += As[rowOffset][k] * Bs[colOffset][k];
 				}
+
+				__syncthreads();
 			}
-			else
+		}
+		else
+		{
+			// Only compute if this thread has a valid position
+			if (row < leftRows && col < rightCols)
 			{
 				// Non-shared memory version
 				for (unsigned int k = 0; k < shared; k++)
@@ -319,7 +319,10 @@ __global__ void multiplyMatricesParallelTranspose(unsigned int leftRows, unsigne
 					sum += left[row][k] * right[col][k];
 				}
 			}
+		}
 
+		if (row < leftRows && col < rightCols)
+		{
 			result[row][col] = sum;
 		}
 
@@ -348,45 +351,45 @@ __global__ void multiplyMatricesParallel(unsigned int leftRows, unsigned int sha
 		if (firstRow >= leftRows || firstCol >= rightCols)
 			break;
 
-		// Only compute if this thread has a valid position
-		if (row < leftRows && col < rightCols)
+		long sum = 0;
+
+		if (useSharedMem)
 		{
-			long sum = 0;
+			// Shared memory tiles
+			__shared__ long As[TILE_WIDTH][TILE_WIDTH];
+			__shared__ long Bs[TILE_WIDTH][TILE_WIDTH];
 
-			if (useSharedMem)
+			for (unsigned int tile = 0; tile < (shared + TILE_WIDTH - 1) / TILE_WIDTH; tile++)
 			{
-				// Shared memory tiles
-				__shared__ long As[TILE_WIDTH][TILE_WIDTH];
-				__shared__ long Bs[TILE_WIDTH][TILE_WIDTH];
+				unsigned int tiledCol = tile * TILE_WIDTH + colOffset;
+				unsigned int tiledRow = tile * TILE_WIDTH + rowOffset;
 
-				for (unsigned int tile = 0; tile < (shared + TILE_WIDTH - 1) / TILE_WIDTH; tile++)
+				// Load A tile
+				if (row < leftRows && tiledCol < shared)
+					As[rowOffset][colOffset] = left[row][tiledCol];
+				else
+					As[rowOffset][colOffset] = 0;
+
+				// Load B tile
+				if (tiledRow < shared && col < rightCols)
+					Bs[rowOffset][colOffset] = right[tiledRow][col];
+				else
+					Bs[rowOffset][colOffset] = 0;
+
+				__syncthreads();
+
+				for (int k = 0; k < TILE_WIDTH; k++)
 				{
-					unsigned int tiledCol = tile * TILE_WIDTH + colOffset;
-					unsigned int tiledRow = tile * TILE_WIDTH + rowOffset;
-
-					// Load A tile
-					if (row < leftRows && tiledCol < shared)
-						As[rowOffset][colOffset] = left[row][tiledCol];
-					else
-						As[rowOffset][colOffset] = 0;
-
-					// Load B tile
-					if (tiledRow < shared && col < rightCols)
-						Bs[rowOffset][colOffset] = right[tiledRow][col];
-					else
-						Bs[rowOffset][colOffset] = 0;
-
-					__syncthreads();
-
-					for (int k = 0; k < TILE_WIDTH; k++)
-					{
-						sum += As[rowOffset][k] * Bs[k][colOffset];
-					}
-
-					__syncthreads();
+					sum += As[rowOffset][k] * Bs[k][colOffset];
 				}
+
+				__syncthreads();
 			}
-			else
+		}
+		else
+		{
+			// Only compute if this thread has a valid position
+			if (row < leftRows && col < rightCols)
 			{
 				// Non-shared memory version
 				for (unsigned int k = 0; k < shared; k++)
@@ -394,7 +397,11 @@ __global__ void multiplyMatricesParallel(unsigned int leftRows, unsigned int sha
 					sum += left[row][k] * right[k][col];
 				}
 			}
+		}
 
+		// Only compute if this thread has a valid position
+		if (row < leftRows && col < rightCols)
+		{
 			result[row][col] = sum;
 		}
 
