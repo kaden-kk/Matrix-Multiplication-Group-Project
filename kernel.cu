@@ -68,31 +68,36 @@ __global__ void generateMatrixParallel(unsigned int numRows, unsigned int numCol
 	// Grid stride until it goes out of bounds
 	while(true)
 	{
-		unsigned int row = ((blockId / blocksPerRow) * TILE_WIDTH) + threadIdx.x;
+		unsigned int firstRow = (blockId / blocksPerRow) * TILE_WIDTH;
 		unsigned int col = (blockId % blocksPerRow) * TILE_WIDTH;
 
+		unsigned int row = firstRow + threadIdx.x;
+
 		// Grid-strided too far
-		if(row >= numRows || col >= numCols)
+		if(firstRow >= numRows || col >= numCols)
 		{
 			break;
 		}
 
-		// Set all values to 1
-		if(uniform)
+		if(row < numRows)
 		{
-			// Handle indices in this block only (for this thread's row)
-			for(unsigned int i = 0; i < TILE_WIDTH && col + i < numCols; i++)
+			// Set all values to 1
+			if(uniform)
 			{
-				matrix[row][col+i] = 1;
+				// Handle indices in this block only (for this thread's row)
+				for(unsigned int i = 0; i < TILE_WIDTH && col + i < numCols; i++)
+				{
+					matrix[row][col+i] = 1;
+				}
 			}
-		}
-		// Values aren't random, but differ enough to reveal problems with multiplicaiton / tranposing
-		else
-		{
-			// Handle indices in this block only (for this thread's row)
-			for(unsigned int i = 0; i < TILE_WIDTH && col + i < numCols; i++)
+			// Values aren't random, but differ enough to reveal problems with multiplicaiton / tranposing
+			else
 			{
-				matrix[row][col+i] = ((col + i) % TILE_WIDTH) + 1;
+				// Handle indices in this block only (for this thread's row)
+				for(unsigned int i = 0; i < TILE_WIDTH && col + i < numCols; i++)
+				{
+					matrix[row][col+i] = ((col + i) % TILE_WIDTH) + 1;
+				}
 			}
 		}
 
@@ -233,10 +238,13 @@ __global__ void transpose(unsigned int originalRows, unsigned int originalCols, 
 			break;
 		}
 
-		// Handle indices in this block only (for this thread's row)
-		for(unsigned int i = 0; i < TILE_WIDTH && col + i < originalCols; i++)
+		if (row < originalRows && col < originalCols)
 		{
-			transpose[col+i][row] = original[row][col+i];
+			// Handle indices in this block only (for this thread's row)
+			for(unsigned int i = 0; i < TILE_WIDTH && col + i < originalCols; i++)
+			{
+				transpose[col+i][row] = original[row][col+i];
+			}
 		}
 
 		blockId += gridDim.x;
@@ -262,7 +270,7 @@ __global__ void multiplyMatricesParallelTranspose(unsigned int leftRows, unsigne
 		unsigned int row = firstRow + rowOffset;
 		unsigned int col = firstCol + colOffset;
 
-		if (row >= leftRows || col >= rightCols)
+		if (firstRow >= leftRows || firstCol >= rightCols)
 			break;
 
 		long sum = 0;
@@ -302,14 +310,21 @@ __global__ void multiplyMatricesParallelTranspose(unsigned int leftRows, unsigne
 		}
 		else
 		{
-			// Non-shared memory version
-			for (unsigned int k = 0; k < shared; k++)
+			// Only compute if this thread has a valid position
+			if (row < leftRows && col < rightCols)
 			{
-				sum += left[row][k] * right[col][k];
+				// Non-shared memory version
+				for (unsigned int k = 0; k < shared; k++)
+				{
+					sum += left[row][k] * right[col][k];
+				}
 			}
 		}
 
-		result[row][col] = sum;
+		if (row < leftRows && col < rightCols)
+		{
+			result[row][col] = sum;
+		}
 
 		blockId += gridDim.x;
 	}
@@ -333,7 +348,7 @@ __global__ void multiplyMatricesParallel(unsigned int leftRows, unsigned int sha
 		unsigned int row = firstRow + rowOffset;
 		unsigned int col = firstCol + colOffset;
 
-		if (row >= leftRows || col >= rightCols)
+		if (firstRow >= leftRows || firstCol >= rightCols)
 			break;
 
 		long sum = 0;
@@ -373,14 +388,22 @@ __global__ void multiplyMatricesParallel(unsigned int leftRows, unsigned int sha
 		}
 		else
 		{
-			// Non-shared memory version
-			for (unsigned int k = 0; k < shared; k++)
+			// Only compute if this thread has a valid position
+			if (row < leftRows && col < rightCols)
 			{
-				sum += left[row][k] * right[k][col];
+				// Non-shared memory version
+				for (unsigned int k = 0; k < shared; k++)
+				{
+					sum += left[row][k] * right[k][col];
+				}
 			}
 		}
 
-		result[row][col] = sum;
+		// Only compute if this thread has a valid position
+		if (row < leftRows && col < rightCols)
+		{
+			result[row][col] = sum;
+		}
 
 		blockId += gridDim.x;
 	}
