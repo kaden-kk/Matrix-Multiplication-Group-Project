@@ -10,7 +10,7 @@
 
 2. **Compile**
 ```bash
-   make matrix
+   make all
 ```
 
    To remove compiled binaries and object files:
@@ -22,12 +22,15 @@
 ```bash
    salloc -N 4 --partition=el8-rpi --gres=gpu:4 -t 10
 ```
+
 4. **Load Modules**
 ```bash
    module load xl_r spectrum-mpi cuda/11.2
 ```
 
 ## Usage
+
+### Matrix Multiplication (MPI + CUDA)
 
 ```bash
 mpirun -np <numProcesses> ./matrix <leftRows> <shared> <rightCols> <useSharedMem> <useTranspose> <checkSerial> [print]
@@ -44,10 +47,32 @@ mpirun -np <numProcesses> ./matrix <leftRows> <shared> <rightCols> <useSharedMem
 | `checkSerial` | Verify result against CPU serial multiplication (`1` = yes, `0` = no) |
 | `print` *(optional)* | Any extra argument triggers matrix printing |
 
-### Quick Test
+#### Quick Test
 To verify the program runs correctly on a small matrix with serial checking:
 ```bash
 mpirun -np 2 ./matrix 1024 1024 1024 1 1 1
+```
+
+### Cache Prefetch Test (CUDA only)
+
+`cacheTest` is a standalone CUDA benchmark that tests all four transpose configurations
+(normal, right transpose, left transpose, double transpose) and compares parallel vs serial timings.
+
+```bash
+./cacheTest <leftRows> <shared> <rightCols> <prefetchRightFirst> <testSerial>
+```
+
+| Argument | Description |
+|----------|-------------|
+| `leftRows` | Number of rows in the left matrix (A) |
+| `shared` | Shared dimension — cols of A / rows of B |
+| `rightCols` | Number of columns in the right matrix (B) |
+| `prefetchRightFirst` | Prefetch right matrix to GPU before left (`1` = yes, `0` = no) |
+| `testSerial` | Also run and time serial CPU versions (`1` = yes, `0` = no) |
+
+#### Quick Test
+```bash
+./cacheTest 4096 4096 4096 0 0
 ```
 
 ## Experiments
