@@ -11,4 +11,4 @@ cacheTest: cacheTest.cu
 	-L/usr/local/cuda-11.2/lib64 -lcudadevrt -lcudart
 
 clean:
-	rm -f *.o matrix
+	rm -f *.o matrix cacheTest
