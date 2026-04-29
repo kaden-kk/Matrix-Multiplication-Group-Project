@@ -16,20 +16,20 @@ typedef unsigned long long ticks;
 extern "C"
 int allocateMatrix(unsigned int numRows, unsigned int numCols, void*** matrix, int dataSize)
 {
+	cudaDeviceSynchronize(); // Might help with strange errors
+
 	cudaError_t err;
 	err = cudaMallocManaged(matrix, numRows * sizeof(void*));
 	if(err != cudaSuccess)
 	{
-		fprintf(stderr, "CudaMallocManaged failed\n");
-		return 1;
+		return err;
 	}
 	for(unsigned int row = 0; row < numRows; row++)
 	{
 		err = cudaMallocManaged(&((*matrix)[row]), numCols * dataSize);
 		if(err != cudaSuccess)
 		{
-			fprintf(stderr, "CudaMallocManaged failed\n");
-			return 1;
+			return err;
 		}
 	}
 	return 0;
@@ -124,11 +124,13 @@ void multiplyMatricesSerial(unsigned int leftRows, unsigned int shared, unsigned
 			// Iterate through each column in right matrix
 			for(unsigned int col = 0; col < rightCols; col++)
 			{
+				int sum = 0;
 				// Do dot product for each element in this row and col
 				for(unsigned int k = 0; k < shared; k++)
 				{
-					result[row][col] += left[row][k] * right[col][k];
+					sum += left[row][k] * right[col][k];
 				}
+				result[row][col] = sum;
 			}
 		}
 	}
@@ -140,11 +142,13 @@ void multiplyMatricesSerial(unsigned int leftRows, unsigned int shared, unsigned
 			// Iterate through each column in right matrix
 			for(unsigned int col = 0; col < rightCols; col++)
 			{
+				int sum = 0;
 				// Do dot product for each element in this row and col
 				for(unsigned int k = 0; k < shared; k++)
 				{
-					result[row][col] += left[row][k] * right[k][col];
+					sum += left[row][k] * right[k][col];
 				}
+				result[row][col] = sum;
 			}
 		}
 	}
@@ -229,11 +233,13 @@ __global__ void transpose(unsigned int originalRows, unsigned int originalCols, 
 	// Grid stride until it goes out of bounds
 	while(true)
 	{
-		unsigned int row = ((blockId / blocksPerRow) * TILE_WIDTH) + threadIdx.x;
+		unsigned int firstRow = (blockId / blocksPerRow) * TILE_WIDTH;
 		unsigned int col = (blockId % blocksPerRow) * TILE_WIDTH;
 
+		unsigned int row = firstRow + threadIdx.x;
+
 		// Grid-strided too far
-		if(row >= originalRows || col >= originalCols)
+		if(firstRow >= originalRows || col >= originalCols)
 		{
 			break;
 		}
@@ -294,13 +300,18 @@ __global__ void multiplyMatricesParallelTranspose(unsigned int leftRows, unsigne
 
 				// Load B tile
 				if (tiledRow < shared && col < rightCols)
-					Bs[rowOffset][colOffset] = right[tiledRow][col];
+					Bs[colOffset][rowOffset] = right[col][tiledRow];
 				else
-					Bs[rowOffset][colOffset] = 0;
+					Bs[colOffset][rowOffset] = 0;
 
 				__syncthreads();
 
-				for (int k = 0; k < TILE_WIDTH; k++)
+				int maxK = TILE_WIDTH;
+
+				if ((tile + 1) * TILE_WIDTH > shared)
+					maxK = shared - tile * TILE_WIDTH;
+
+				for (int k = 0; k < maxK; k++)
 				{
 					sum += As[rowOffset][k] * Bs[colOffset][k];
 				}
@@ -378,7 +389,12 @@ __global__ void multiplyMatricesParallel(unsigned int leftRows, unsigned int sha
 
 				__syncthreads();
 
-				for (int k = 0; k < TILE_WIDTH; k++)
+				int maxK = TILE_WIDTH;
+
+				if ((tile + 1) * TILE_WIDTH > shared)
+					maxK = shared - tile * TILE_WIDTH;
+
+				for (int k = 0; k < maxK; k++)
 				{
 					sum += As[rowOffset][k] * Bs[k][colOffset];
 				}
@@ -475,11 +491,13 @@ __global__ void parallelCheck(unsigned int numRows, unsigned int numCols, int** 
 		// Grid stride until it goes out of bounds
 		while(true)
 		{
-			unsigned int row = ((blockId / blocksPerRow) * TILE_WIDTH) + threadIdx.x;
+			unsigned int firstRow = (blockId / blocksPerRow) * TILE_WIDTH;
 			unsigned int col = (blockId % blocksPerRow) * TILE_WIDTH;
 
+			unsigned int row = firstRow + threadIdx.x;
+
 			// Grid-strided too far
-			if(row >= numRows || col >= numCols || failed)
+			if(firstRow >= numRows || col >= numCols || failed)
 			{
 				break;
 			}
@@ -506,11 +524,13 @@ __global__ void parallelCheck(unsigned int numRows, unsigned int numCols, int** 
 		// Grid stride until it goes out of bounds
 		while(true)
 		{
-			unsigned int row = ((blockId / blocksPerRow) * TILE_WIDTH) + threadIdx.x;
+			unsigned int firstRow = (blockId / blocksPerRow) * TILE_WIDTH;
 			unsigned int col = (blockId % blocksPerRow) * TILE_WIDTH;
 
+			unsigned int row = firstRow + threadIdx.x;
+
 			// Grid-strided too far
-			if(row >= numRows || col >= numCols || failed)
+			if(firstRow >= numRows || col >= numCols || failed)
 			{
 				break;
 			}

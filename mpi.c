@@ -20,8 +20,7 @@ int main(int argc, char** argv)
     int device = rank % deviceCount;
     cudaSetDevice(device);
 
-    if(argc < 7)
-    {
+    if(argc < 7){
         if(rank==0)
         {
             printf("Usage: ./matrix [leftRows] [shared] [rightCols] [useSharedMem] [useTranspose] [checkSerial] [optional print]\n");
@@ -56,29 +55,57 @@ int main(int argc, char** argv)
     short **right;
     int **resultLocal;
 
-    if(allocateMatrix(localRows,shared,(void***)&leftLocal, sizeof(short)) == 1)
+    int errorCode; // Captures error code from allocation
+
+    errorCode = allocateMatrix(localRows,shared,(void***)&leftLocal, sizeof(short));
+    if(errorCode != 0)
     {
-        fprintf(stderr, "CudaMalloc failed. Use smaller matrices\n");
+        fprintf(stderr, "cudaMallocManaged() failed. Use different matrix dimensions. Maximum observed "
+                        "size was 49500 49500 49500. Very small dimensions may also fail to allocate. \n");
+        MPI_Abort(MPI_COMM_WORLD, errorCode);
         return 1;
     }
-    if(allocateMatrix(shared,rightCols,(void***)&right, sizeof(short)) == 1)
+    errorCode = allocateMatrix(shared,rightCols,(void***)&right, sizeof(short));
+    if(errorCode != 0)
     {
-        fprintf(stderr, "CudaMalloc failed. Use smaller matrices\n");
+        fprintf(stderr, "cudaMallocManaged() failed. Use different matrix dimensions. Maximum observed "
+                        "size was 49500 49500 49500. Very small dimensions may also fail to allocate. \n");
+        MPI_Abort(MPI_COMM_WORLD, errorCode);
         return 1;
     }
-    if(allocateMatrix(localRows,rightCols,(void***)&resultLocal, sizeof(int)) == 1)
+    errorCode = allocateMatrix(localRows,rightCols,(void***)&resultLocal, sizeof(int));
+    if(errorCode != 0)
     {
-        fprintf(stderr, "CudaMalloc failed. Use smaller matrices\n");
+        fprintf(stderr, "cudaMallocManaged() failed. Use different matrix dimensions. Maximum observed "
+                        "size was 49500 49500 49500. Very small dimensions may also fail to allocate. \n");
+        MPI_Abort(MPI_COMM_WORLD, errorCode);
         return 1;
+    }
+
+    if(useTranspose && rank != 0)
+    {
+        freeMatrix(shared, (void**)right);
+        errorCode = allocateMatrix(rightCols, shared, (void***)&right, sizeof(short));
+        if(errorCode != 0)
+        {
+            fprintf(stderr, "cudaMallocManaged() failed. Use different matrix dimensions. Maximum observed "
+                            "size was 49500 49500 49500. Very small dimensions may also fail to allocate. \n");
+            MPI_Abort(MPI_COMM_WORLD, errorCode);
+            return 1;
+        }
     }
 
     short **leftFull = NULL;
 
     if(rank==0)
     {
-        if(allocateMatrix(leftRows,shared,(void***)&leftFull, sizeof(short)) == 1)
+        errorCode = allocateMatrix(leftRows,shared,(void***)&leftFull, sizeof(short));
+        if(errorCode != 0)
         {
-            fprintf(stderr, "CudaMalloc failed. Use smaller matrices\n");
+            fprintf(stderr, "cudaMallocManaged() failed. Use different matrix dimensions. Maximum observed "
+                            "size was 49500 49500 49500. Very small dimensions may also fail to allocate. \n");
+            MPI_Abort(MPI_COMM_WORLD, errorCode);
+            return 1;
         }
         generateMatrix(leftRows,shared,leftFull,!checkSerial);
         generateMatrix(shared,rightCols,right,!checkSerial);
@@ -92,9 +119,12 @@ int main(int argc, char** argv)
     if(useTranspose && rank == 0)
     {
         double transposeStart = MPI_Wtime();
-        if(allocateMatrix(rightCols,shared,(void***)&rightTranspose, sizeof(short)) == 1)
+        errorCode = allocateMatrix(rightCols,shared,(void***)&rightTranspose, sizeof(short));
+        if(errorCode != 0)
         {
-            fprintf(stderr, "CudaMalloc failed. Use smaller matrices\n");
+            fprintf(stderr, "cudaMallocManaged() failed. Use different matrix dimensions. Maximum observed "
+                            "size was 49500 49500 49500. Very small dimensions may also fail to allocate. \n");
+            MPI_Abort(MPI_COMM_WORLD, errorCode);
             return 1;
         }
         transposeMatrix(shared, rightCols, right, rightTranspose,device);
@@ -106,12 +136,19 @@ int main(int argc, char** argv)
 
     // broadcast B
 
-    for(unsigned int i=0;i<shared;i++)
+    if(useTranspose)
     {
-        if(useTranspose)
-            MPI_Bcast(right[i],shared,MPI_SHORT,0,MPI_COMM_WORLD);
-        else
-            MPI_Bcast(right[i],rightCols,MPI_SHORT,0,MPI_COMM_WORLD);
+        for(unsigned int i = 0; i < rightCols; i++)
+        {
+            MPI_Bcast(right[i], shared, MPI_SHORT, 0, MPI_COMM_WORLD);
+        }
+    }
+    else
+    {
+        for(unsigned int i = 0; i < shared; i++)
+        {
+            MPI_Bcast(right[i], rightCols, MPI_SHORT, 0, MPI_COMM_WORLD);
+        }
     }
 
     // scatter rows of A 
@@ -163,9 +200,12 @@ int main(int argc, char** argv)
 
     if(rank==0)
     {
-        if(allocateMatrix(leftRows,rightCols,(void***)&finalResult, sizeof(int)) == 1)
+        errorCode = allocateMatrix(leftRows,rightCols,(void***)&finalResult, sizeof(int));
+        if(errorCode != 0)
         {
-            fprintf(stderr, "CudaMalloc failed. Use smaller matrices\n");
+            fprintf(stderr, "cudaMallocManaged() failed. Use different matrix dimensions. Maximum observed "
+                            "size was 49500 49500 49500. Very small dimensions may also fail to allocate. \n");
+            MPI_Abort(MPI_COMM_WORLD, errorCode);
             return 1;
         }
     }
@@ -238,9 +278,12 @@ int main(int argc, char** argv)
     {
         if(checkSerial)
         {
-            if(allocateMatrix(leftRows,rightCols,(void***)&serial, sizeof(int)) == 1)
+            errorCode = allocateMatrix(leftRows,rightCols,(void***)&serial, sizeof(int));
+            if(errorCode != 0)
             {
-                fprintf(stderr, "CudaMalloc failed. Use smaller matrices\n");
+                fprintf(stderr, "cudaMallocManaged() failed. Use different matrix dimensions. Maximum observed "
+                                "size was 49500 49500 49500. Very small dimensions may also fail to allocate. \n");
+                MPI_Abort(MPI_COMM_WORLD, errorCode);
                 return 1;
             }
 
@@ -256,17 +299,13 @@ int main(int argc, char** argv)
             printMatrixInt(leftRows,rightCols,serial);
         }
 
-        // Remove this if statement if you want to check everytime (even when serial not computed)
-        if(checkSerial)
-        {
-            printf("Checking results...\n");
-            failed = checkResults(leftRows,rightCols,finalResult,serial,shared,device) != 0;
-        }
+        printf("Checking results...\n");
+        failed = checkResults(leftRows,rightCols,finalResult,serial,shared,device) != 0;
     }
     if(rank == 0)
     {
         if(failed)
-            printf("Multiplcation incorrect\n");
+            printf("Multiplication incorrect\n");
         else
             printf("Success\n");
     }
