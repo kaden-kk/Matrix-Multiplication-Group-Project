@@ -373,7 +373,6 @@ __global__ void multiplyMatricesParallel(unsigned int leftRows, unsigned int sha
 			for (unsigned int tile = 0; tile < (shared + TILE_WIDTH - 1) / TILE_WIDTH; tile++)
 			{
 				unsigned int tiledCol = tile * TILE_WIDTH + colOffset;
-				unsigned int tiledRow = tile * TILE_WIDTH + rowOffset;
 
 				// Load A tile
 				if (row < leftRows && tiledCol < shared)
@@ -553,8 +552,6 @@ __global__ void parallelCheck(unsigned int numRows, unsigned int numCols, int** 
 	}
 	if(failed)
 		*result = 1;
-	else
-		*result = 0;
 }
 
 extern "C"
@@ -568,10 +565,17 @@ int checkResults(unsigned int numRows, unsigned int numCols, int** parallel, int
 
     cudaDeviceSynchronize();
 
-    int result;
-    parallelCheck<<<NUM_BLOCKS, TILE_WIDTH>>>(numRows, numCols, parallel, serial, correct, &result);
+    int* result;
+    cudaMallocManaged(&result, sizeof(int*));
+    *result = 0;
+
+    parallelCheck<<<NUM_BLOCKS, TILE_WIDTH>>>(numRows, numCols, parallel, serial, correct, result);
 
     cudaDeviceSynchronize();
 
-    return result;
+    int success = *result;
+
+    cudaFree(result);
+
+    return success;
 }
