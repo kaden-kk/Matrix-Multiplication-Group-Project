@@ -294,7 +294,7 @@ __global__ void multiplyMatricesParallelTranspose(unsigned int leftRows, unsigne
 
 				// Load B tile
 				if (tiledRow < shared && col < rightCols)
-					Bs[rowOffset][colOffset] = right[col][tiledRow];
+					Bs[rowOffset][colOffset] = right[tiledRow][col];
 				else
 					Bs[rowOffset][colOffset] = 0;
 
