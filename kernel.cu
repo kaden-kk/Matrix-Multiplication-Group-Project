@@ -293,8 +293,8 @@ __global__ void multiplyMatricesParallelTranspose(unsigned int leftRows, unsigne
 					As[rowOffset][colOffset] = 0;
 
 				// Load B tile
-				if (tiledRow < shared && col < rightCols)
-					Bs[rowOffset][colOffset] = right[col][tiledRow];
+				if ((firstCol + rowOffset) < rightCols && tiledCol < shared)
+					Bs[rowOffset][colOffset] = right[firstCol + rowOffset][tiledCol];
 				else
 					Bs[rowOffset][colOffset] = 0;
 
@@ -531,10 +531,9 @@ __global__ void parallelCheck(unsigned int numRows, unsigned int numCols, int** 
 			blockId += gridDim.x;
 		}
 	}
-	if(failed)
-		*result = 1;
-	else
-		*result = 0;
+	if(failed){
+    	atomicOr(result, 1);
+	}
 }
 
 extern "C"
@@ -548,10 +547,12 @@ int checkResults(unsigned int numRows, unsigned int numCols, int** parallel, int
 
     cudaDeviceSynchronize();
 
-    int result;
-    parallelCheck<<<NUM_BLOCKS, TILE_WIDTH>>>(numRows, numCols, parallel, serial, correct, &result);
-
-    cudaDeviceSynchronize();
-
-    return result;
+	int *result;
+	cudaMallocManaged(&result, sizeof(int));
+	*result = 0;
+	parallelCheck<<<NUM_BLOCKS, TILE_WIDTH>>>(numRows, numCols, parallel, serial, correct, result);
+	cudaDeviceSynchronize();
+	int ret = *result;
+	cudaFree(result);
+	return ret;
 }

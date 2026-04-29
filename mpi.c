@@ -89,30 +89,31 @@ int main(int argc, char** argv)
 
     short **rightTranspose = NULL;
 
-    if(useTranspose && rank == 0)
-    {
-        double transposeStart = MPI_Wtime();
-        if(allocateMatrix(rightCols,shared,(void***)&rightTranspose, sizeof(short)) == 1)
-        {
-            fprintf(stderr, "CudaMalloc failed. Use smaller matrices\n");
-            return 1;
+    if (useTranspose) {
+        short **rightTranspose = NULL;
+        allocateMatrix(rightCols, shared, (void***)&rightTranspose, sizeof(short));
+
+        if (rank == 0) {
+            double transposeStart = MPI_Wtime();
+            transposeMatrix(shared, rightCols, right, rightTranspose, device);
+            cudaDeviceSynchronize();
+            double transposeEnd = MPI_Wtime();
+            printf("Transpose runtime: %f seconds\n", transposeEnd - transposeStart);
         }
-        transposeMatrix(shared, rightCols, right, rightTranspose,device);
-        freeMatrix(shared,(void**)right);
+
+        freeMatrix(shared, (void**)right);
         right = rightTranspose;
-        double transposeEnd = MPI_Wtime();
-        printf("Transpose runtime: %f seconds\n", transposeEnd - transposeStart);
     }
 
     // broadcast B
 
-    for(unsigned int i=0;i<shared;i++)
-    {
-        if(useTranspose)
-            MPI_Bcast(right[i],shared,MPI_SHORT,0,MPI_COMM_WORLD);
-        else
-            MPI_Bcast(right[i],rightCols,MPI_SHORT,0,MPI_COMM_WORLD);
-    }
+    if (useTranspose) {
+        for (unsigned int i = 0; i < rightCols; i++)
+            MPI_Bcast(right[i], shared, MPI_SHORT, 0, MPI_COMM_WORLD);
+    } else {
+        for (unsigned int i = 0; i < shared; i++)
+            MPI_Bcast(right[i], rightCols, MPI_SHORT, 0, MPI_COMM_WORLD);
+    }       
 
     // scatter rows of A 
 
