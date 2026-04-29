@@ -402,88 +402,74 @@ void parallelMultiplication(unsigned int leftRows, unsigned int shared, unsigned
 int main(int argc, char** argv)
 {
 	srand(time(NULL)); // Set random seed for this execution
-	if(argc < 6)
+	if(argc < 4)
 	{
-		fprintf(stderr, "ERROR: Format is [executable] [left matrix num rows] [shared dimension] [right matrix num cols] [non-zero for prefetch right first] [non-zero for testing serial]\n");
+		fprintf(stderr, "ERROR: Format is ./cacheTest [square matrix size] [non-zero for prefetch right first] [non-zero for testing serial]\n");
 		return 1;
 	}
 
-	unsigned int leftRows = atoi(argv[1]);
-	if(leftRows <= 0)
+	unsigned int matrixSize = atoi(argv[1]);
+	if(matrixSize <= 0)
 	{
-		fprintf(stderr, "ERROR: left rows must be >= 1\n");
+		fprintf(stderr, "ERROR: matrix size must be >= 1\n");
 		return 1;
 	}
 
-	unsigned int shared = atoi(argv[2]);
-	if(shared <= 0)
-	{
-		fprintf(stderr, "ERROR: shared dimension must be >= 1\n");
-		return 1;
-	}
-
-	unsigned int rightCols = atoi(argv[3]);
-	if(rightCols <= 0)
-	{
-		fprintf(stderr, "ERROR: right cols must be >= 1\n");
-		return 1;
-	}
-
-	int prefetchSetting = atoi(argv[4]);
+	int prefetchSetting = atoi(argv[2]);
 	bool prefetchRightFirst = prefetchSetting != 0;
 
-	int useSerial = atoi(argv[5]);
+	int useSerial = atoi(argv[3]);
 	bool testSerial = useSerial != 0;
 
 	int device = 0;
 
 	short** right;
-	allocateMatrix(leftRows, shared, (void***)&right, sizeof(short));
+	allocateMatrix(matrixSize, matrixSize, (void***)&right, sizeof(short));
 
 	short** left;
-	allocateMatrix(leftRows, shared, (void***)&left, sizeof(short));
+	allocateMatrix(matrixSize, matrixSize, (void***)&left, sizeof(short));
 
 	int** serialResult;
 	if(testSerial)
-		allocateMatrix(leftRows, shared, (void***)&serialResult, sizeof(int));
+		allocateMatrix(matrixSize, matrixSize, (void***)&serialResult, sizeof(int));
 
 	int** parallelResult;
-	allocateMatrix(leftRows, shared, (void***)&parallelResult, sizeof(int));
+	allocateMatrix(matrixSize, matrixSize, (void***)&parallelResult, sizeof(int));
 
-	generateMatrix(leftRows, shared, left, true);
-	generateMatrix(shared, rightCols, right, true);
+	generateMatrix(matrixSize, matrixSize, left, true);
+	generateMatrix(matrixSize, matrixSize, right, true);
 
-	parallelMultiplication(leftRows, shared, rightCols, left, right, parallelResult, device, prefetchRightFirst);
+	parallelMultiplication(matrixSize, matrixSize, matrixSize, left, right, parallelResult, device, prefetchRightFirst);
 
 	if(testSerial)
 	{
 		printf("Serial timings:\n");
 		ticks start = getticks();
-		multiplyMatricesSerial(leftRows, shared, rightCols, left, right, serialResult);
+		multiplyMatricesSerial(matrixSize, matrixSize, matrixSize, left, right, serialResult);
 		ticks end = getticks();
 		printf("\tTime for normal: %lf \n", (double)(end - start) / (double)512000000.0);
 
 		start = getticks();
-		multiplyMatricesSerialRightTranspose(leftRows, shared, rightCols, left, right, serialResult);
+		multiplyMatricesSerialRightTranspose(matrixSize, matrixSize, matrixSize, left, right, serialResult);
 		end = getticks();
 		printf("\tTime for right transpose: %lf \n", (double)(end - start) / (double)512000000.0);
 
 		start = getticks();
-		multiplyMatricesSerialLeftTranspose(leftRows, shared, rightCols, left, right, serialResult);
+		multiplyMatricesSerialLeftTranspose(matrixSize, matrixSize, matrixSize, left, right, serialResult);
 		end = getticks();
 		printf("\tTime for left transpose: %lf \n", (double)(end - start) / (double)512000000.0);
 
 		start = getticks();
-		multiplyMatricesSerialDoubleTranspose(leftRows, shared, rightCols, left, right, serialResult);
+		multiplyMatricesSerialDoubleTranspose(matrixSize, matrixSize, matrixSize, left, right, serialResult);
 		end = getticks();
 		printf("\tTime for double transpose: %lf \n\n", (double)(end - start) / (double)512000000.0);
 	}
 
-	freeMatrix(leftRows, (void**)left);
-	freeMatrix(shared, (void**)right);
+	freeMatrix(matrixSize, (void**)left);
+	freeMatrix(matrixSize, (void**)right);
 	if(testSerial)
-		freeMatrix(leftRows, (void**)serialResult);
-	freeMatrix(leftRows, (void**)parallelResult);
+		freeMatrix(matrixSize, (void**)serialResult);
+	freeMatrix(matrixSize, (void**)parallelResult);
 
 	return 0;
 }

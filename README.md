@@ -59,20 +59,18 @@ mpirun -np 2 ./matrix 1024 1024 1024 1 1 1
 (normal, right transpose, left transpose, double transpose) and compares parallel vs serial timings.
 
 ```bash
-./cacheTest <leftRows> <shared> <rightCols> <prefetchRightFirst> <testSerial>
+./cacheTest <matrixSize> <prefetchRightFirst> <testSerial>
 ```
 
 | Argument | Description |
 |----------|-------------|
-| `leftRows` | Number of rows in the left matrix (A) |
-| `shared` | Shared dimension — cols of A / rows of B |
-| `rightCols` | Number of columns in the right matrix (B) |
+| `matrixSize` | Width of left and right matrices, which are both square |
 | `prefetchRightFirst` | Prefetch right matrix to GPU before left (`1` = yes, `0` = no) |
 | `testSerial` | Also run and time serial CPU versions (`1` = yes, `0` = no) |
 
 #### Quick Test
 ```bash
-./cacheTest 4096 4096 4096 0 0
+./cacheTest 1024 0 1
 ```
 
 ## Experiments
