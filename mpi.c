@@ -127,11 +127,9 @@ int main(int argc, char** argv)
             MPI_Abort(MPI_COMM_WORLD, errorCode);
             return 1;
         }
-        transposeMatrix(shared, rightCols, right, rightTranspose,device);
-        freeMatrix(shared,(void**)right);
+
+        freeMatrix(shared, (void**)right);
         right = rightTranspose;
-        double transposeEnd = MPI_Wtime();
-        printf("Transpose runtime: %f seconds\n", transposeEnd - transposeStart);
     }
 
     // broadcast B
