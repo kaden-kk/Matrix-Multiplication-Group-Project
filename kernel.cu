@@ -373,6 +373,7 @@ __global__ void multiplyMatricesParallel(unsigned int leftRows, unsigned int sha
 			for (unsigned int tile = 0; tile < (shared + TILE_WIDTH - 1) / TILE_WIDTH; tile++)
 			{
 				unsigned int tiledCol = tile * TILE_WIDTH + colOffset;
+				unsigned int tiledRow = tile * TILE_WIDTH + rowOffset;
 
 				// Load A tile
 				if (row < leftRows && tiledCol < shared)
