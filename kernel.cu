@@ -124,11 +124,13 @@ void multiplyMatricesSerial(unsigned int leftRows, unsigned int shared, unsigned
 			// Iterate through each column in right matrix
 			for(unsigned int col = 0; col < rightCols; col++)
 			{
+				int sum = 0;
 				// Do dot product for each element in this row and col
 				for(unsigned int k = 0; k < shared; k++)
 				{
-					result[row][col] += left[row][k] * right[col][k];
+					sum += left[row][k] * right[col][k];
 				}
+				result[row][col] = sum;
 			}
 		}
 	}
@@ -140,11 +142,13 @@ void multiplyMatricesSerial(unsigned int leftRows, unsigned int shared, unsigned
 			// Iterate through each column in right matrix
 			for(unsigned int col = 0; col < rightCols; col++)
 			{
+				int sum = 0;
 				// Do dot product for each element in this row and col
 				for(unsigned int k = 0; k < shared; k++)
 				{
-					result[row][col] += left[row][k] * right[k][col];
+					sum += left[row][k] * right[k][col];
 				}
+				result[row][col] = sum;
 			}
 		}
 	}
@@ -229,11 +233,13 @@ __global__ void transpose(unsigned int originalRows, unsigned int originalCols, 
 	// Grid stride until it goes out of bounds
 	while(true)
 	{
-		unsigned int row = ((blockId / blocksPerRow) * TILE_WIDTH) + threadIdx.x;
+		unsigned int firstRow = (blockId / blocksPerRow) * TILE_WIDTH;
 		unsigned int col = (blockId % blocksPerRow) * TILE_WIDTH;
 
+		unsigned int row = firstRow + threadIdx.x;
+
 		// Grid-strided too far
-		if(row >= originalRows || col >= originalCols)
+		if(firstRow >= originalRows || col >= originalCols)
 		{
 			break;
 		}
@@ -485,11 +491,13 @@ __global__ void parallelCheck(unsigned int numRows, unsigned int numCols, int** 
 		// Grid stride until it goes out of bounds
 		while(true)
 		{
-			unsigned int row = ((blockId / blocksPerRow) * TILE_WIDTH) + threadIdx.x;
+			unsigned int firstRow = (blockId / blocksPerRow) * TILE_WIDTH;
 			unsigned int col = (blockId % blocksPerRow) * TILE_WIDTH;
 
+			unsigned int row = firstRow + threadIdx.x;
+
 			// Grid-strided too far
-			if(row >= numRows || col >= numCols || failed)
+			if(firstRow >= numRows || col >= numCols || failed)
 			{
 				break;
 			}
@@ -516,11 +524,13 @@ __global__ void parallelCheck(unsigned int numRows, unsigned int numCols, int** 
 		// Grid stride until it goes out of bounds
 		while(true)
 		{
-			unsigned int row = ((blockId / blocksPerRow) * TILE_WIDTH) + threadIdx.x;
+			unsigned int firstRow = (blockId / blocksPerRow) * TILE_WIDTH;
 			unsigned int col = (blockId % blocksPerRow) * TILE_WIDTH;
 
+			unsigned int row = firstRow + threadIdx.x;
+
 			// Grid-strided too far
-			if(row >= numRows || col >= numCols || failed)
+			if(firstRow >= numRows || col >= numCols || failed)
 			{
 				break;
 			}

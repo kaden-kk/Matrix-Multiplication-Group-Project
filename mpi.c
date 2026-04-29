@@ -273,12 +273,8 @@ int main(int argc, char** argv)
             printMatrixInt(leftRows,rightCols,serial);
         }
 
-        // Remove this if statement if you want to check everytime (even when serial not computed)
-        if(checkSerial)
-        {
-            printf("Checking results...\n");
-            failed = checkResults(leftRows,rightCols,finalResult,serial,shared,device) != 0;
-        }
+        printf("Checking results...\n");
+        failed = checkResults(leftRows,rightCols,finalResult,serial,shared,device) != 0;
     }
     if(rank == 0)
     {

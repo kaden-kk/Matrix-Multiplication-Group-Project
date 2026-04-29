@@ -130,11 +130,13 @@ void multiplyMatricesSerial(unsigned int leftRows, unsigned int shared, unsigned
 		// Iterate through each column in right matrix
 		for(unsigned int col = 0; col < rightCols; col++)
 		{
+			int sum = 0;
 			// Do dot product for each element in this row and col
 			for(unsigned int k = 0; k < shared; k++)
 			{
-				result[row][col] += left[row][k] * right[k][col];
+				sum += left[row][k] * right[k][col];
 			}
+			result[row][col] = sum;
 		}
 	}
 }
@@ -147,11 +149,13 @@ void multiplyMatricesSerialRightTranspose(unsigned int leftRows, unsigned int sh
 		// Iterate through each column in right matrix
 		for(unsigned int col = 0; col < rightCols; col++)
 		{
+			int sum = 0;
 			// Do dot product for each element in this row and col
 			for(unsigned int k = 0; k < shared; k++)
 			{
-				result[row][col] += left[row][k] * right[col][k];
+				sum += left[row][k] * right[col][k];
 			}
+			result[row][col] = sum;
 		}
 	}
 }
@@ -164,11 +168,13 @@ void multiplyMatricesSerialLeftTranspose(unsigned int leftRows, unsigned int sha
 		// Iterate through each column in right matrix
 		for(unsigned int col = 0; col < rightCols; col++)
 		{
+			int sum = 0;
 			// Do dot product for each element in this row and col
 			for(unsigned int k = 0; k < shared; k++)
 			{
-				result[row][col] += left[k][row] * right[k][col];
+				sum += left[k][row] * right[k][col];
 			}
+			result[row][col] = sum;
 		}
 	}
 }
@@ -181,11 +187,13 @@ void multiplyMatricesSerialDoubleTranspose(unsigned int leftRows, unsigned int s
 		// Iterate through each column in right matrix
 		for(unsigned int col = 0; col < rightCols; col++)
 		{
+			int sum = 0;
 			// Do dot product for each element in this row and col
 			for(unsigned int k = 0; k < shared; k++)
 			{
-				result[row][col] += left[k][row] * right[col][k];
+				sum += left[k][row] * right[col][k];
 			}
+			result[row][col] = sum;
 		}
 	}
 }
