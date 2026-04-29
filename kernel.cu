@@ -16,20 +16,20 @@ typedef unsigned long long ticks;
 extern "C"
 int allocateMatrix(unsigned int numRows, unsigned int numCols, void*** matrix, int dataSize)
 {
+	cudaDeviceSynchronize(); // Might help with strange errors
+
 	cudaError_t err;
 	err = cudaMallocManaged(matrix, numRows * sizeof(void*));
 	if(err != cudaSuccess)
 	{
-		fprintf(stderr, "CudaMallocManaged failed\n");
-		return 1;
+		return err;
 	}
 	for(unsigned int row = 0; row < numRows; row++)
 	{
 		err = cudaMallocManaged(&((*matrix)[row]), numCols * dataSize);
 		if(err != cudaSuccess)
 		{
-			fprintf(stderr, "CudaMallocManaged failed\n");
-			return 1;
+			return err;
 		}
 	}
 	return 0;
