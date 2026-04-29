@@ -72,6 +72,16 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    if(useTranspose && rank != 0)
+    {
+        freeMatrix(shared, (void**)right);
+        if(allocateMatrix(rightCols, shared, (void***)&right, sizeof(short)) == 1)
+        {
+            fprintf(stderr, "CudaMalloc failed. Use smaller matrices\n");
+            return 1;
+        }
+    }
+
     short **leftFull = NULL;
 
     if(rank==0)
@@ -106,12 +116,19 @@ int main(int argc, char** argv)
 
     // broadcast B
 
-    for(unsigned int i=0;i<shared;i++)
+    if(useTranspose)
     {
-        if(useTranspose)
-            MPI_Bcast(right[i],shared,MPI_SHORT,0,MPI_COMM_WORLD);
-        else
-            MPI_Bcast(right[i],rightCols,MPI_SHORT,0,MPI_COMM_WORLD);
+        for(unsigned int i = 0; i < rightCols; i++)
+        {
+            MPI_Bcast(right[i], shared, MPI_SHORT, 0, MPI_COMM_WORLD);
+        }
+    }
+    else
+    {
+        for(unsigned int i = 0; i < shared; i++)
+        {
+            MPI_Bcast(right[i], rightCols, MPI_SHORT, 0, MPI_COMM_WORLD);
+        }
     }
 
     // scatter rows of A 
@@ -266,7 +283,7 @@ int main(int argc, char** argv)
     if(rank == 0)
     {
         if(failed)
-            printf("Multiplcation incorrect\n");
+            printf("Multiplication incorrect\n");
         else
             printf("Success\n");
     }

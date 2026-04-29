@@ -294,13 +294,18 @@ __global__ void multiplyMatricesParallelTranspose(unsigned int leftRows, unsigne
 
 				// Load B tile
 				if (tiledRow < shared && col < rightCols)
-					Bs[rowOffset][colOffset] = right[tiledRow][col];
+					Bs[colOffset][rowOffset] = right[col][tiledRow];
 				else
-					Bs[rowOffset][colOffset] = 0;
+					Bs[colOffset][rowOffset] = 0;
 
 				__syncthreads();
 
-				for (int k = 0; k < TILE_WIDTH; k++)
+				int maxK = TILE_WIDTH;
+
+				if ((tile + 1) * TILE_WIDTH > shared)
+					maxK = shared - tile * TILE_WIDTH;
+
+				for (int k = 0; k < maxK; k++)
 				{
 					sum += As[rowOffset][k] * Bs[colOffset][k];
 				}
@@ -378,7 +383,12 @@ __global__ void multiplyMatricesParallel(unsigned int leftRows, unsigned int sha
 
 				__syncthreads();
 
-				for (int k = 0; k < TILE_WIDTH; k++)
+				int maxK = TILE_WIDTH;
+
+				if ((tile + 1) * TILE_WIDTH > shared)
+					maxK = shared - tile * TILE_WIDTH;
+
+				for (int k = 0; k < maxK; k++)
 				{
 					sum += As[rowOffset][k] * Bs[k][colOffset];
 				}
