@@ -502,13 +502,19 @@ __global__ void parallelCheck(unsigned int numRows, unsigned int numCols, int** 
 				break;
 			}
 
-			// Handle indices in this block only (for this thread's row)
-			for(unsigned int i = 0; i < TILE_WIDTH && col + i < numCols; i++)
+			if(row < numRows)
 			{
-				if(parallel[row][col+i] != correct)
+				// Handle indices in this block only (for this thread's row)
+				for(unsigned int i = 0; i < TILE_WIDTH && col + i < numCols; i++)
 				{
-					failed = true;
-					break;
+					if(col + i < numCols)
+					{
+						if(parallel[row][col+i] != correct)
+						{
+							failed = true;
+							break;
+						}
+					}
 				}
 			}
 
@@ -535,13 +541,19 @@ __global__ void parallelCheck(unsigned int numRows, unsigned int numCols, int** 
 				break;
 			}
 
-			// Handle indices in this block only (for this thread's row)
-			for(unsigned int i = 0; i < TILE_WIDTH && col + i < numCols; i++)
+			if(row < numRows)
 			{
-				if(parallel[row][col+i] != serial[row][col+i])
+				// Handle indices in this block only (for this thread's row)
+				for(unsigned int i = 0; i < TILE_WIDTH && col + i < numCols; i++)
 				{
-					failed = true;
-					break;
+					if(col + i < numCols)
+					{
+						if(parallel[row][col+i] != serial[row][col+i])
+						{
+							failed = true;
+							break;
+						}
+					}
 				}
 			}
 
